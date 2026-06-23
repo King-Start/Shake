@@ -1,6 +1,5 @@
 package com.shakewake.core
 
-import android.app.KeyguardManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -118,11 +117,8 @@ class ShakeWakeService : LifecycleService() {
         wakeLock = pm.newWakeLock(flags, "ShakeWake::WakeLock")
         wakeLock?.acquire(3000L) // Tahan 3 detik lalu lepas otomatis
 
-        // Untuk Android 8.0+ coba dismiss keyguard juga
-        val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            km.requestDismissKeyguard(null, null)
-        }
+        // WakeLock sudah cukup untuk menyalakan layar dari Service
+        // requestDismissKeyguard butuh Activity, tidak bisa dipanggil dari Service
     }
 
     private fun vibratePhone() {
