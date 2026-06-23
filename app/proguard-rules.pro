@@ -1,0 +1,3 @@
+-keep class com.shakewake.** { *; }
+-keep class com.shakewake.core.** { *; }
+-keep class com.shakewake.receiver.** { *; }
