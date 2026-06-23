@@ -1,16 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Wake screen -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- Foreground service agar tetap jalan di background -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
-    <!-- Auto-start setelah reboot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- Untuk turn on layar (Android 8.3+) -->
     <uses-permission android:name="android.permission.TURN_SCREEN_ON" />
-    <!-- Sensor accelerometer -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
+
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true" />
 
     <application
@@ -35,14 +33,25 @@
             </intent-filter>
         </activity>
 
-        <!-- Foreground Service untuk shake detection -->
+        <!-- WakeActivity: transparan, khusus Samsung One UI wake screen -->
+        <activity
+            android:name=".ui.WakeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.ShakeWake.Transparent"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:launchMode="singleInstance" />
+
+        <!-- Foreground Service -->
         <service
             android:name=".core.ShakeWakeService"
             android:exported="false"
             android:foregroundServiceType="health"
             android:stopWithTask="false" />
 
-        <!-- Boot receiver agar otomatis aktif setelah restart -->
+        <!-- Boot receiver -->
         <receiver
             android:name=".receiver.BootReceiver"
             android:exported="true">

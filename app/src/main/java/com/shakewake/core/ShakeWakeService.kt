@@ -16,13 +16,15 @@ import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import com.shakewake.R
-import com.shakewake.ui.MainActivity
+import com.shakewake.ui.WakeActivity
 
 /**
  * ShakeWakeService — Foreground Service utama.
- * - Mendaftarkan SensorManager untuk accelerometer
- * - Saat shake terdeteksi: bangunkan layar dengan WakeLock
- * - START_STICKY agar Android restart service jika di-kill
+ *
+ * Fix Samsung One UI:
+ * - Samsung memblokir SCREEN_BRIGHT_WAKE_LOCK dari Service background
+ * - Solusi: launch WakeActivity (transparan) yang handle FLAG_TURN_SCREEN_ON
+ * - WakeActivity muncul sebentar lalu finish() sendiri
  */
 class ShakeWakeService : LifecycleService() {
 
@@ -32,14 +34,12 @@ class ShakeWakeService : LifecycleService() {
     private var wakeLock: PowerManager.WakeLock? = null
 
     companion object {
-        const val CHANNEL_ID = "shakewake_channel"
-        const val NOTIF_ID = 1001
-        const val EXTRA_SENSIBILITY = "sensibility"
-        const val EXTRA_SHAKE_COUNT = "shake_count"
-        const val EXTRA_INTERVAL = "interval"
-        const val PREF_NAME = "shakewake_prefs"
+        const val CHANNEL_ID  = "shakewake_channel"
+        const val NOTIF_ID    = 1001
+        const val PREF_NAME   = "shakewake_prefs"
 
-        fun buildIntent(context: Context): Intent = Intent(context, ShakeWakeService::class.java)
+        fun buildIntent(context: Context): Intent =
+            Intent(context, ShakeWakeService::class.java)
     }
 
     override fun onCreate() {
@@ -51,14 +51,11 @@ class ShakeWakeService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
-
-        // Baca opsi dari SharedPreferences (diset oleh MainActivity)
-        val prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        val prefs       = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         val sensibility = prefs.getFloat("sensibility", 1.5f)
         val shakeCount  = prefs.getInt("shake_count", 2)
         val interval    = prefs.getLong("interval", 1500L)
 
-        // Re-init dengan opsi terbaru
         unregisterSensor()
         shakeDetector = ShakeDetectorCore(
             ShakeOptions(sensibility, shakeCount, interval)
@@ -85,7 +82,10 @@ class ShakeWakeService : LifecycleService() {
 
     private fun registerSensor() {
         accelerometer?.let {
-            sensorManager.registerListener(shakeDetector, it, SensorManager.SENSOR_DELAY_GAME)
+            sensorManager.registerListener(
+                shakeDetector, it,
+                SensorManager.SENSOR_DELAY_GAME
+            )
         }
     }
 
@@ -93,11 +93,6 @@ class ShakeWakeService : LifecycleService() {
         try { sensorManager.unregisterListener(shakeDetector) } catch (_: Exception) {}
     }
 
-    /**
-     * Dipanggil saat shake terdeteksi.
-     * Gunakan WakeLock FULL_WAKE_LOCK untuk menyalakan layar,
-     * lalu keyguardManager untuk dismiss lock screen (jika tidak ada PIN).
-     */
     private fun onShakeDetected() {
         vibratePhone()
         wakeScreen()
@@ -106,19 +101,25 @@ class ShakeWakeService : LifecycleService() {
     private fun wakeScreen() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
 
-        // Lepas wakeLock lama jika masih aktif
+        // Step 1: WakeLock — bekerja di kebanyakan device termasuk Infinix
         wakeLock?.let { if (it.isHeld) it.release() }
 
         @Suppress("DEPRECATION")
         val flags = PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
-                PowerManager.ACQUIRE_CAUSES_WAKEUP or
-                PowerManager.ON_AFTER_RELEASE
+                    PowerManager.ACQUIRE_CAUSES_WAKEUP   or
+                    PowerManager.ON_AFTER_RELEASE
 
         wakeLock = pm.newWakeLock(flags, "ShakeWake::WakeLock")
-        wakeLock?.acquire(3000L) // Tahan 3 detik lalu lepas otomatis
+        wakeLock?.acquire(5000L)
 
-        // WakeLock sudah cukup untuk menyalakan layar dari Service
-        // requestDismissKeyguard butuh Activity, tidak bisa dipanggil dari Service
+        // Step 2: Launch WakeActivity (fix khusus Samsung One UI)
+        // Samsung sering blokir WakeLock dari Service, tapi Activity bisa bypass
+        val wakeIntent = Intent(this, WakeActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+        }
+        startActivity(wakeIntent)
     }
 
     private fun vibratePhone() {
@@ -141,8 +142,6 @@ class ShakeWakeService : LifecycleService() {
         } catch (_: Exception) {}
     }
 
-    // ---- NOTIFICATION ----
-
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val chan = NotificationChannel(
@@ -153,15 +152,15 @@ class ShakeWakeService : LifecycleService() {
                 description = "Berjalan di background untuk mendeteksi goyangan"
                 setShowBadge(false)
             }
-            val nm = getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(chan)
+            getSystemService(NotificationManager::class.java)
+                .createNotificationChannel(chan)
         }
     }
 
     private fun buildNotification(): Notification {
         val pi = PendingIntent.getActivity(
             this, 0,
-            Intent(this, MainActivity::class.java),
+            Intent(this, com.shakewake.ui.MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
