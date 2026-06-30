@@ -4,8 +4,11 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.view.WindowManager
 import android.widget.SeekBar
 import android.widget.Toast
@@ -52,11 +55,14 @@ class MainActivity : AppCompatActivity() {
         setupListeners()
         updateStatusUI()
         updateAdminUI()
+        updateBatteryUI()
+        checkBatteryOptimization()
     }
 
     override fun onResume() {
         super.onResume()
         updateAdminUI()
+        updateBatteryUI()
     }
 
     private fun loadPrefs() {
@@ -153,6 +159,11 @@ class MainActivity : AppCompatActivity() {
         binding.btnTest.setOnClickListener {
             Toast.makeText(this, "🔔 Goyangkan HP sekarang!", Toast.LENGTH_SHORT).show()
         }
+
+        // Tombol minta izin Battery Unrestricted (penting untuk Samsung)
+        binding.btnBattery.setOnClickListener {
+            requestIgnoreBatteryOptimization()
+        }
     }
 
     private fun saveMode(mode: String) {
@@ -190,9 +201,52 @@ class MainActivity : AppCompatActivity() {
         val active = dpm.isAdminActive(adminComponent)
         binding.btnAdmin.text = if (active) "✓ Device Admin Aktif" else "Aktifkan Device Admin"
         binding.btnAdmin.alpha = if (active) 0.6f else 1.0f
-        // Enable mode lock/both hanya jika admin aktif
         binding.rbModeLock.isEnabled = active
         binding.rbModeBoth.isEnabled = active
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return pm.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    private fun updateBatteryUI() {
+        val unrestricted = isIgnoringBatteryOptimizations()
+        binding.btnBattery.text = if (unrestricted)
+            "✓ Battery Unrestricted Aktif" else "Aktifkan Battery Unrestricted"
+        binding.btnBattery.alpha = if (unrestricted) 0.6f else 1.0f
+    }
+
+    private fun checkBatteryOptimization() {
+        // Tampilkan reminder sekali via toast kalau belum unrestricted
+        if (!isIgnoringBatteryOptimizations()) {
+            Toast.makeText(
+                this,
+                "⚠ Aktifkan 'Battery Unrestricted' agar ShakeWake tidak dimatikan sistem",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    @Suppress("BatteryLife")
+    private fun requestIgnoreBatteryOptimization() {
+        if (isIgnoringBatteryOptimizations()) {
+            Toast.makeText(this, "✓ Sudah unrestricted", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
+            }
+            startActivity(intent)
+        } catch (_: Exception) {
+            // Fallback: buka halaman battery optimization settings biasa
+            try {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            } catch (_: Exception) {
+                Toast.makeText(this, "Buka manual: Setelan → Baterai → ShakeWake", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun startService() {
